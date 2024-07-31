@@ -70,8 +70,7 @@ def find_matches(input_table: list[list[tuple]]) -> list[list[list]]:
             overlapping_image_pair = []
             for box_A in crops_A:
                 for box_B in crops_B:
-                    # center_distance(box_left["box"], box_right["box"])[0] > distance
-                    if IoU(box_A["box"], box_B["box"]):
+                    if IoU(box_A["box"], box_B["box"]) > 0.2:
                         overlapping_image_pair.append((box_A, box_B))
             overlaps_row.append(overlapping_image_pair)
         overlaps_table.append(overlaps_row)
@@ -92,33 +91,7 @@ def x_and_y_ratio(box_l, box_r) -> (float, float):
     return x_ratio, y_ratio
 
 
-def show_matches(table: list[list[list[tuple]]]):
-    heat = -1
-    for row in table:
-        for im_pair in row:
-            for box_left, box_right in im_pair:
-                heat = (heat + 1) % 8
-                box_l = box_left["box"]
-                file_l = box_left["file"]
-                box_r = box_right["box"]
-                file_r = box_right["file"]
-                x_ratio, y_ratio = x_and_y_ratio(box_l, box_r)
-                if x_ratio > 0.95 and y_ratio > 0.95:
-                    print(HEAT[4] + "========SAME========" + CLR)
-                elif x_ratio > 0.95 or y_ratio > 0.95:
-                    print(HEAT[3] + " X OR Y SAME (CUT?) " + CLR)
-                elif x_ratio > 0.8 and y_ratio > 0.8:
-                    print(HEAT[2] + "    could be     " + HEAT[3] + "[+]" + CLR)
-                elif x_ratio > 0.8 or y_ratio > 0.8:
-                    print(HEAT[2] + "    not sure     " + HEAT[1] + "[-]" + CLR)
-                else:
-                    print(HEAT[1] + "        CUT ?       "+CLR)
-                cv2.imshow("imgA", cv2.imread(str(file_l)))
-                cv2.imshow("imgB", cv2.imread(str(file_r)))
-                cv2.waitKey(0)
-
-
-def main(crops_dir, duplicates_dir, user_review, pix_to_um=0.1725):
+def main(crops_dir, duplicates_dir, user_review, pix_to_um=1):  # pix_to_um = 0.1725
     files = list(crops_dir.glob("*.png"))
     print(len(files), "crops were found")
     coords_list = path_to_box(files)  # output = list[[imgX, imgY, boxX1, boxX2, boxY1, boxY2]
@@ -175,23 +148,10 @@ def main(crops_dir, duplicates_dir, user_review, pix_to_um=0.1725):
         print(f"{table_name} overlaps :")
         overlaps_table = find_matches(neighbor_table)
         print_table(table_cell_len(overlaps_table), width=3)
-        remove_count += move_obvious_duplicates(overlaps_table, duplicates_dir, user_review)
-    print(remove_count, "images removed")
-
-
-
-    # resolve overlaps
-    # find overlaps Y-wise
-    # resolve overlaps
-    # find overlaps between X and Y overlaps
-
-    # intersections = list(range(len(img_names)))
-    # for i, box1 in enumerate(real_coords[0:-1]):
-    #     for j, box2 in enumerate(real_coords[i+1:]):
-    #         if intersection2D(box1, box2) > 10:
-    #             intersections[i] = j
-    # no_inter = list(set(intersections))
-    # print("there are", len(no_inter), "groups of objects")
+        count = move_obvious_duplicates(overlaps_table, duplicates_dir, user_review)
+        print(count, "images removed")
+        remove_count += count
+    print(remove_count, "images removed in total")
 
 
 def move_obvious_duplicates(table, dup_dir, user_review):
@@ -204,8 +164,8 @@ def move_obvious_duplicates(table, dup_dir, user_review):
                 x_ratio, y_ratio = x_and_y_ratio(box_a["box"], box_b["box"])
                 smallest = min(box_a, box_b, key=lambda x: area(x["box"]))
                 if user_review:
-                    print_heuristic(x_ratio, y_ratio, box_a["file"], box_b["file"])
-                if x_ratio > 0.95 and y_ratio > 0.95:
+                    print_heuristic(x_ratio, y_ratio, box_a, box_b)
+                if x_ratio > 0.95 or y_ratio > 0.95:
                     shutil.move(smallest["file"], dup_dir)
                     remove_count += 1
                     continue
@@ -226,8 +186,8 @@ def move_obvious_duplicates(table, dup_dir, user_review):
     return remove_count
 
 
-def print_heuristic(x_ratio, y_ratio, file_a, file_b):
-    string = f"imgA = {file_a.name}, imgB = {file_b.name}"
+def print_heuristic(x_ratio, y_ratio, box_a, box_b):
+    string = f"imgA = {box_a["file"].name}, imgB = {box_b["file"].name}"
     if x_ratio > 0.95 and y_ratio > 0.95:
         print(HEAT[4] + "========SAME========" + CLR, string)
     elif x_ratio > 0.95 or y_ratio > 0.95:
@@ -279,17 +239,6 @@ def table_counts(crops_table: list[list[list]]) -> (list[list[int]], int):
             row_counts.append(count)
         counts.append(row_counts)
     return counts, empty_count
-
-
-def center_distance(box1, box2, to_pix=0):
-    if to_pix == 0:
-        to_pix = 1
-    center1 = ((box1[0] + box1[1])/2, (box1[2] + box1[3])/2)
-    center2 = ((box2[0] + box2[1])/2, (box2[2] + box2[3])/2)
-    dx = to_pix * (center1[0] - center2[0])
-    dy = to_pix * (center1[1] - center2[1])
-    dist = sqrt(dx ** 2 + dy ** 2)
-    return dist, dx, dy
 
 
 def intersection1D(a1, a2, b1, b2):
